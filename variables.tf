@@ -3,3 +3,8 @@ variable "region" {
  default = "eu-central-1"
 }
 
+variable "domain" {
+ type = string
+ default = "dimarushchak.me"
+}
+
