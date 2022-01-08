@@ -8,7 +8,7 @@ provider "aws" {
 }
 
 resource "aws_s3_bucket" "ccv" {
-  bucket = var.domain
+  bucket = element(var.domains,0)
   website {
     index_document = "index.html"
     error_document = "error.html"
@@ -16,9 +16,9 @@ resource "aws_s3_bucket" "ccv" {
 }
 
 resource "aws_s3_bucket" "rd_ccv" {
-  bucket = var.rd_domain
+  bucket = element(var.domains,1)
   website {
-    redirect_all_requests_to = "https://${var.domain}"
+    redirect_all_requests_to = "https://${element(var.domains,0)}"
   }
 }
 
@@ -33,7 +33,7 @@ resource "aws_s3_bucket_policy" "ccv_policy" {
             "Effect": "Allow",
             "Principal": "*",
             "Action": "s3:GetObject",
-            "Resource": "arn:aws:s3:::${var.domain}/*"
+            "Resource": "arn:aws:s3:::${element(var.domains,0)}/*"
         }
     ]
 }
@@ -42,8 +42,8 @@ EOF
 
 resource "aws_acm_certificate" "create_cert" {
   provider                  = aws.USA
-  domain_name               = var.domain
-  subject_alternative_names = [var.rd_domain]
+  domain_name               = element(var.domains,0)
+  subject_alternative_names = [element(var.domains,1)]
   validation_method         = "DNS"
 
   lifecycle {
@@ -52,7 +52,7 @@ resource "aws_acm_certificate" "create_cert" {
 }
 
 data "aws_route53_zone" "basic" {
-  name = var.domain
+  name = element(var.domains,0)
 }
 
 resource "aws_route53_record" "cert" {
@@ -72,7 +72,7 @@ resource "aws_route53_record" "cert" {
 }
 
 resource "aws_route53_record" "ssl" {
-  for_each = toset(["${var.domain}", "${var.rd_domain}"])
+  for_each = toset(["${element(var.domains,0)}", "${element(var.domains,1)}"])
   name     = each.value
   zone_id  = data.aws_route53_zone.basic.zone_id
   type     = "A"
@@ -90,7 +90,7 @@ resource "aws_cloudfront_distribution" "cfd" {
     domain_name = aws_s3_bucket.ccv.bucket_regional_domain_name
   }
 
-  aliases             = ["${var.domain}", "${var.rd_domain}"]
+  aliases             = ["${element(var.domains,0)}", "${element(var.domains,1)}"]
   enabled             = true
   default_root_object = "index.html"
 
@@ -148,18 +148,10 @@ resource "aws_s3_bucket_object" "images_svg" {
   source       = "/home/giten/ccv/images/${each.value}"
 }
 
-resource "aws_s3_bucket_object" "images_png" {
+resource "aws_s3_bucket_object" "images" {
   bucket       = aws_s3_bucket.ccv.id
-  content_type = "image/png"
-  for_each     = fileset("/home/giten/ccv/images/", "*.png")
-  key          = "/images/${each.value}"
-  source       = "/home/giten/ccv/images/${each.value}"
-}
-
-resource "aws_s3_bucket_object" "images_jpg" {
-  bucket       = aws_s3_bucket.ccv.id
-  content_type = "image/jpeg"
-  for_each     = fileset("/home/giten/ccv/images/", "*.jpg")
+  content_type = "image/${substr(each.value, -3, -1)}"
+  for_each     = fileset("/home/giten/ccv/images/", "*.{jpg,png}")
   key          = "/images/${each.value}"
   source       = "/home/giten/ccv/images/${each.value}"
 }
@@ -171,4 +163,3 @@ resource "aws_s3_bucket_object" "js" {
   key          = "/js/${each.value}"
   source       = "/home/giten/ccv/js/${each.value}"
 }
-
