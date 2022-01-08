@@ -2,6 +2,11 @@ provider "aws" {
  region = var.region
 }
 
+provider "aws" {
+ region = "us-east-1"
+ alias = "USA"
+}
+
 resource "aws_s3_bucket" "ccv" {
  bucket = var.domain
   website {
@@ -36,6 +41,7 @@ EOF
 }
 
 resource "aws_acm_certificate" "create_cert" {
+  provider = aws.USA
   domain_name       = aws_s3_bucket.ccv.id
   subject_alternative_names = [aws_s3_bucket.rd_ccv.id]
   validation_method = "DNS"
@@ -57,7 +63,7 @@ resource "aws_route53_record" "cert" {
       type   = dvo.resource_record_type 
     } 
   } 
- 
+
   name            = each.value.name 
   records         = [each.value.record] 
   ttl             = 300 
@@ -65,7 +71,44 @@ resource "aws_route53_record" "cert" {
   zone_id         = data.aws_route53_zone.basic.zone_id 
 }
 
+resource "aws_route53_record" "ssl" {
+  for_each = toset(["${var.domain}", "www.${var.domain}"])
+  name = each.value
+  zone_id = data.aws_route53_zone.basic.zone_id
+  type = "A"
 
+  alias {
+    name = aws_cloudfront_distribution.cfd.domain_name
+    zone_id = aws_cloudfront_distribution.cfd.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_cloudfront_distribution" "cfd" {
+  origin {
+    origin_id   = aws_s3_bucket.ccv.id
+    domain_name = aws_s3_bucket.ccv.bucket_regional_domain_name
+  }
+
+  aliases = ["${aws_s3_bucket.ccv.id}", "${aws_s3_bucket.rd_ccv.id}"]
+  enabled             = true
+  default_root_object = "index.html"
+
+  price_class = "PriceClass_100"
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    /*cloudfront_default_certificate = true*/
+    acm_certificate_arn = aws_acm_certificate.create_cert.arn
+    ssl_support_method = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+  
   default_cache_behavior {
     allowed_methods  = ["GET", "HEAD"]
     cached_methods   = ["GET", "HEAD"]
